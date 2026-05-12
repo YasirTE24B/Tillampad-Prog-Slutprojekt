@@ -2,126 +2,17 @@
 <html lang="sv">
 <head>
     <meta charset="UTF-8">
-    <title>Pingis-Dodge</title>
-    <style>
-        body { font-family: 'Segoe UI', sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; overflow: hidden; }
-        canvas { background: #000; border: 4px solid #333; box-shadow: 0 0 20px rgba(0,0,0,0.5); margin-top: 20px; }
-        .ui { position: absolute; top: 40px; left: 50%; transform: translateX(-50%); pointer-events: none; z-index: 10; }
-        #score { font-size: 64px; font-weight: bold; color: #00ffcc; text-shadow: 0 0 10px rgba(0,255,204,0.5); }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>tillämpad spel</title>
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-    <div class="ui">
+    <div id="speldiv">
         <div id="score">0</div>
+        <canvas id="spelCanvas"></canvas>
     </div>
-    
-    <canvas id="gameCanvas"></canvas>
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
-        const scoreElement = document.getElementById('score');
-
-        canvas.width = 640;
-        canvas.height = 800;
-
-        let ballX = 320; 
-        let smoothedX = 320;
-        let score = 0;
-        let obstacles = [];
-        let canDie = true;
-
-        async function fetchBall() {
-            try {
-                const res = await fetch('http://localhost:5000/get_ball');
-                const data = await res.json();
-                ballX = data.ball_x;
-            } catch(e) {}
-            setTimeout(fetchBall, 15);
-        }
-
-        function createObstacle() {
-            const gapWidth = 180;
-            const gapPos = Math.random() > 0.5 ? 0 : (canvas.width - gapWidth);
-            if (obstacles.length > 0 && obstacles[obstacles.length-1].y < 250) return;
-
-            obstacles.push({
-                y: -30,
-                gapX: gapPos,
-                gapW: gapWidth,
-                passed: false
-            });
-        }
-
-        function update() {
-            smoothedX += (ballX - smoothedX) * 0.15;
-
-            if(Math.random() < 0.02) createObstacle();
-
-            obstacles.forEach((obs, index) => {
-                obs.y += 4;
-
-                // Poäng
-                if(!obs.passed && obs.y > 600) {
-                    score++;
-                    scoreElement.innerText = score;
-                    obs.passed = true;
-                }
-
-                // Krock-detektering
-                if(canDie && obs.y > 580 && obs.y < 620) {
-                    if(smoothedX < obs.gapX || smoothedX > (obs.gapX + obs.gapW)) {
-                        triggerDeath();
-                    }
-                }
-
-                if(obs.y > canvas.height) obstacles.splice(index, 1);
-            });
-        }
-
-        function triggerDeath() {
-            canDie = false;
-            score = 0;
-            scoreElement.innerText = "du dogde :(";
-            fetch('http://localhost:5000/set_status?dead=1');
-            
-            setTimeout(() => {
-                scoreElement.innerText = score;
-                fetch('http://localhost:5000/set_status?dead=0');
-                canDie = true;
-            }, 800);
-        }
-
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Centerlinje
-            ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-            ctx.beginPath(); ctx.moveTo(320, 0); ctx.lineTo(320, canvas.height); ctx.stroke();
-
-            // Hinder
-            ctx.fillStyle = "#ff3366";
-            obstacles.forEach(obs => {
-                ctx.fillRect(0, obs.y, obs.gapX, 25);
-                ctx.fillRect(obs.gapX + obs.gapW, obs.y, canvas.width, 25);
-            });
-
-            // Boll
-            ctx.shadowBlur = 15;
-            ctx.shadowColor = "#00ffcc";
-            ctx.fillStyle = "#00ffcc";
-            ctx.beginPath();
-            ctx.arc(smoothedX, 600, 15, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.shadowBlur = 0;
-
-            update();
-            requestAnimationFrame(draw);
-        }
-
-        fetchBall();
-        draw();
-    </script>
+    <script src="script.js"></script>
 </body>
 </html>

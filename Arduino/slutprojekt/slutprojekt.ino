@@ -11,37 +11,79 @@ const int knappPin = 2;
 const int redPin = 3;
 const int greenPin = 5;
 const int bluePin = 6;
+const int piezoPin = 10;
 
 const int SERVO_MIN = 70; 
 const int SERVO_MAX = 100;
 const int SERVO_START_POS = 90;
 
 int mode = 0; // 0 = kamera, 1 = pot
+int currentBallX = 320;
 bool isDead = false;
 unsigned long lastDisplayUpdate = 0;
-int currentBallX = 320;
+unsigned long lastSerialSend = 0;
 
 void setup() {
-  // Min python använder 115200 baudrate
-  Serial.begin(115200);
+  Serial.begin(115200); // python använder 115200 baudrate
   Xservo.attach(XservoPin);
 
   pinMode(knappPin, INPUT_PULLUP);
   pinMode(redPin, OUTPUT);
   pinMode(greenPin, OUTPUT);
   pinMode(bluePin, OUTPUT);
+  pinMode(piezoPin, OUTPUT);
   
   Xservo.write(SERVO_START_POS);
 }
 
+void buttonPress() {
+  if (digitalRead(knappPin) == LOW) {
+    mode = !mode;
+    while(Serial.available() > 0) Serial.read();
+    Serial.println("Bytte lage (DEBUG ELLER KAMERA)");
+    delay(300); // kort debounce så att den inte spammar
+  }
+}
+
 void updateOLED() {
-  u8g.firstPage();  
-  do {
-    u8g.setFont(u8g_font_unifont);
-    u8g.drawStr(0, 15, "lalala boll spel");
-    u8g.drawStr(0, 35, mode == 0 ? "Vanlig" : "debug mode");
-    u8g.drawStr(0, 55, isDead ? "du dogde" : "Lever");
-  } while( u8g.nextPage() );
+  if (millis() - lastDisplayUpdate > 200) {
+    u8g.firstPage();  
+    do {
+      u8g.setFont(u8g_font_unifont);
+
+      if (mode == 1) {
+        u8g.drawStr(0, 15, "DEBUG MODE");
+      } else {
+        u8g.drawStr(0, 15, "lalala boll spel");
+      }
+
+      if (isDead && mode == 0) {
+        u8g.drawStr(0, 35, "DU DOG :(");
+      } else if (mode == 0) {
+        u8g.drawStr(0, 35, "Vanlig");
+      } else {
+        u8g.drawStr(0, 35, "Debug");
+      }
+
+      if (mode == 1) {
+        int potValue = analogRead(potPin); 
+        int debugX = map(potValue, 500, 800, 640, 0); // mappar pot värde 500-800 till 0px-640px (kamerans resolution)
+        debugX = constrain(debugX, 0, 640); // så att den inte ger något dumt värde
+
+        String potStr = "POT: " + String(debugX);
+        u8g.drawStr(0, 55, potStr.c_str());
+      } else {
+        if (isDead) {
+          u8g.drawStr(0, 55, "DOD");
+        } else {
+          u8g.drawStr(0, 55, "LEVER");
+        }
+      }
+
+    } while( u8g.nextPage() );
+
+    lastDisplayUpdate = millis();
+  }
 }
 
 void setRGB(int r, int g, int b) {
@@ -50,13 +92,15 @@ void setRGB(int r, int g, int b) {
   analogWrite(bluePin, b);
 }
 
-void loop() {
-  if (digitalRead(knappPin) == LOW) {
-    mode = !mode;
-    Serial.println("Bytte lage till nagot");
-    delay(300); // kort debounce så att den inte spammar
-  }
+void playDeadSound() {
+  tone(piezoPin, 3000, 3000); // piezo, frek, tid (ms)
+}
 
+void playPointSound() {
+  tone(piezoPin, 2000, 100); // piezo, frek, tid (ms)
+}
+
+void uppdateraServo() {
   int potValue = analogRead(potPin);
   // Serial.println(potValue);
 
@@ -65,31 +109,72 @@ void loop() {
   // Serial.println(servoAngle2);
 
   Xservo.write(servoAngle2);
+}
 
+void setRGB2() {
+  if (mode == 1) {
+    setRGB(0, 0, 255); // blå = debug
+  } else if (isDead) {
+    setRGB(255, 0, 0); // röd = död
+  } else {
+    setRGB(0, 255, 0); // grön = lever
+  }  
+}
+
+
+
+void loop() {
+  buttonPress();
+
+  uppdateraServo();
+
+  
   // Boll-data från min python
   if (mode == 1) {
     setRGB(0, 0, 255); // blå RGB (debug)
+
+    if (millis() - lastSerialSend > 20) {
+      int potValue = analogRead(potPin);
+      int debugX = map(potValue, 500, 800, 640, 0); // mappar pot värde 500-800 till 0px-640px (kamerans resolution)
+
+      debugX = constrain(debugX, 0, 640); // så att den inte ger något dumt värde
+      Serial.println(debugX); 
+
+      lastSerialSend = millis();
+    }
+
+    isDead = false;
   } else {
     if (Serial.available() > 0) {
-      String data = Serial.readStringUntil('\n');
-      
-      // Skicka data till python
-      int commaIndex = data.indexOf(',');
-      if (commaIndex > 0) {
-          currentBallX = data.substring(0, commaIndex).toInt();
-          isDead = data.substring(commaIndex + 1).toInt() == 1;
-      }
+        // läs första tecknet för att förstå vad det är som python koden vill
+        char kommando = Serial.read(); 
+
+        if (kommando == 'D') { // D för död
+            isDead = true;
+            playDeadSound();
+        } 
+        else if (kommando == 'L') { // L för lever
+            isDead = false;
+        } 
+        else if (kommando == 'P') { // P för poäng
+            playPointSound();
+        }
+        else if (isDigit(kommando)) {
+            // om det är en siffra så ska den läsa resten av talet som bollens position
+            String rest = Serial.readStringUntil('\n');
+            String helaTalet = String(kommando) + rest;
+            currentBallX = helaTalet.toInt();
+        }
     }
     
-    if (isDead) setRGB(255, 0, 0); // röd RGB
-    else setRGB(0, 255, 0); // grön RGB
+    if (isDead) {
+      setRGB(255, 0, 0); // röd RGB
+    } else {
+      setRGB(0, 255, 0); // grön RGB
+    }
   }
 
-  // OLED update saker
-  if (millis() - lastDisplayUpdate > 200) {
-    updateOLED();
-    lastDisplayUpdate = millis();
-  }
+  
+  updateOLED();
 
-  // delay(15); // För servot
 }

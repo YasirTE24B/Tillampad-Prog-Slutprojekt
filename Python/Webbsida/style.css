@@ -1,0 +1,33 @@
+body {
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    background-color: #ffffff;
+    font-family: sans-serif;
+    overflow: hidden;
+    color: #fff000;
+}
+
+#speldiv {
+    position: relative;
+}
+
+#spelCanvas {
+    background: #000000;
+    display: block;
+}
+
+#score {
+    position: absolute;
+    top: 20px;
+    width: 100%;
+    text-align: center;
+    font-size: 48px;
+    font-weight: bold;
+    color: #fff000;
+    pointer-events: none;
+    z-index: 10;
+}
